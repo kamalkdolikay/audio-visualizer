@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Rust Audio Visualizer</title>
+  <style>
+    body { margin: 0; background: #000; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<script>
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const ws = new WebSocket('ws://localhost:3000/ws');
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const barCount = 64;
+  const bars = new Array(barCount).fill(0);          // current value (for drawing)
+  const smoothBars = new Array(barCount).fill(0);    // peak-hold + decay
+
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    const step = Math.floor(data.bins.length / barCount);
+
+    for (let i = 0; i < barCount; i++) {
+      const slice = data.bins.slice(i * step, (i + 1) * step);
+      const sum   = slice.reduce((a, b) => a + b, 0);
+      const avg   = slice.length ? sum / slice.length : 0;   // <-- defined here
+
+      // Peak-hold + instant rise
+      smoothBars[i] = Math.max(avg, smoothBars[i] * 0.9);
+    }
+  };
+
+  function draw() {
+    // Fade background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const barWidth = canvas.width / barCount;
+
+    for (let i = 0; i < barCount; i++) {
+      // Gentle fall-off
+      smoothBars[i] *= 0.95;
+
+      // *** TALLER BARS ***
+      const heightMultiplier = 350;               // ← increase / decrease to taste
+      const h = Math.min(smoothBars[i] * heightMultiplier, canvas.height * 0.9);
+
+      const x = i * barWidth;
+      const y = canvas.height - h;
+
+      const hue = i * 360 / barCount;
+      ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+      ctx.fillRect(x, y, barWidth - 2, h);
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  draw();
+</script>
+</body>
+</html>
